@@ -31,7 +31,7 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPI.h>
+#include <DeckLinkAPI_v14_2_1.h>
 
 extern "C" {
 #include "config.h"
@@ -55,6 +55,10 @@ extern "C" {
 
 #include "decklink_common.h"
 #include "decklink_dec.h"
+
+static inline bool is_equal_guid(const REFIID &a, const REFIID &b) {
+    return memcmp(&a, &b, sizeof(REFIID)) == 0;
+}
 
 #define MAX_WIDTH_VANC 1920
 const BMDDisplayMode AUTODETECT_DEFAULT_MODE = bmdModeNTSC;
@@ -131,7 +135,7 @@ public:
         // IUnknown methods
         virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) 
         {
-            if (iid == IID_IDeckLinkMemoryAllocator_v14_2_1) { 
+            if (is_equal_guid(iid, IID_IDeckLinkMemoryAllocator_v14_2_1)) { 
                 *ppv = (IDeckLinkMemoryAllocator_v14_2_1*)this; 
                 AddRef(); 
                 return S_OK; 
@@ -590,7 +594,7 @@ public:
 
         virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv)
         {
-            if (iid == IID_IDeckLinkInputCallback_v14_2_1) {
+            if (is_equal_guid(iid, IID_IDeckLinkInputCallback_v14_2_1)) {
                 *ppv = (IDeckLinkInputCallback_v14_2_1*)this;
                 AddRef();
                 return S_OK;

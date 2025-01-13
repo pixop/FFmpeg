@@ -28,7 +28,7 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPI.h>
+#include <DeckLinkAPI_v14_2_1.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -46,6 +46,10 @@ extern "C" {
 #include "libklvanc/vanc-lines.h"
 #include "libklvanc/pixels.h"
 #endif
+
+static inline bool is_equal_guid(const REFIID &a, const REFIID &b) {
+    return memcmp(&a, &b, sizeof(REFIID)) == 0;
+}
 
 /* DeckLink callback class declaration */
 class decklink_frame : public IDeckLinkVideoFrame_v14_2_1
@@ -113,7 +117,7 @@ public:
     }
     virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) 
     {
-        if (iid == IID_IDeckLinkVideoFrame_v14_2_1) 
+        if (is_equal_guid(iid, IID_IDeckLinkVideoFrame_v14_2_1)) 
         { 
             *ppv = (IDeckLinkVideoFrame_v14_2_1*)this; 
             AddRef(); 
@@ -170,7 +174,7 @@ public:
     virtual HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped(void)       { return S_OK; }
     virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv)
     {
-        if (iid == IID_IDeckLinkVideoOutputCallback_v14_2_1) 
+        if (is_equal_guid(iid, IID_IDeckLinkVideoOutputCallback_v14_2_1)) 
         { 
             *ppv = (IDeckLinkVideoOutputCallback_v14_2_1*)this; 
             AddRef(); 

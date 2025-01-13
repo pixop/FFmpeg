@@ -25,7 +25,7 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPI.h>
+#include <DeckLinkAPI_v14_2_1.h>
 #ifdef _WIN32
 #include <DeckLinkAPI_i.c>
 #else
