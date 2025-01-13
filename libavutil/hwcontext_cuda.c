@@ -364,7 +364,7 @@ static int cuda_context_init(AVHWDeviceContext *device_ctx, int flags) {
         if (ret < 0)
             return ret;
     } else if (flags & AV_CUDA_USE_CURRENT_CONTEXT) {
-        ret = CHECK_CU(cu->cuCtxGetCurrent(&hwctx->cuda_ctx));
+        ret = CHECK_CU(cu->cuCtxPopCurrent(&hwctx->cuda_ctx));
         if (ret < 0)
             return ret;
         av_log(device_ctx, AV_LOG_INFO, "Using current CUDA context.\n");
