@@ -28,7 +28,7 @@ extern "C" {
 #include "libavformat/internal.h"
 }
 
-#include <DeckLinkAPI.h>
+#include <DeckLinkAPI_v14_2_1.h>
 
 extern "C" {
 #include "libavformat/avformat.h"
@@ -45,8 +45,12 @@ extern "C" {
 #include "libklvanc/pixels.h"
 #endif
 
+static inline bool is_equal_guid(const REFIID &a, const REFIID &b) {
+    return memcmp(&a, &b, sizeof(REFIID)) == 0;
+}
+
 /* DeckLink callback class declaration */
-class decklink_frame : public IDeckLinkVideoFrame
+class decklink_frame : public IDeckLinkVideoFrame_v14_2_1
 {
 public:
     decklink_frame(struct decklink_ctx *ctx, AVFrame *avframe, AVCodecID codec_id, int height, int width) :
@@ -109,7 +113,16 @@ public:
         _ancillary->AddRef();
         return S_OK;
     }
-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
+    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) 
+    {
+        if (is_equal_guid(iid, IID_IDeckLinkVideoFrame_v14_2_1)) 
+        { 
+            *ppv = (IDeckLinkVideoFrame_v14_2_1*)this; 
+            AddRef(); 
+            return S_OK; 
+        }
+        return E_NOINTERFACE; 
+    }
     virtual ULONG   STDMETHODCALLTYPE AddRef(void)                            { return ++_refs; }
     virtual ULONG   STDMETHODCALLTYPE Release(void)
     {
@@ -136,10 +149,10 @@ private:
     std::atomic<int>  _refs;
 };
 
-class decklink_output_callback : public IDeckLinkVideoOutputCallback
+class decklink_output_callback : public IDeckLinkVideoOutputCallback_v14_2_1
 {
 public:
-    virtual HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame *_frame, BMDOutputFrameCompletionResult result)
+    virtual HRESULT STDMETHODCALLTYPE ScheduledFrameCompleted(IDeckLinkVideoFrame_v14_2_1 *_frame, BMDOutputFrameCompletionResult result)
     {
         decklink_frame *frame = static_cast<decklink_frame *>(_frame);
         struct decklink_ctx *ctx = frame->_ctx;
@@ -157,7 +170,16 @@ public:
         return S_OK;
     }
     virtual HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped(void)       { return S_OK; }
-    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) { return E_NOINTERFACE; }
+    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv)
+    {
+        if (is_equal_guid(iid, IID_IDeckLinkVideoOutputCallback_v14_2_1)) 
+        { 
+            *ppv = (IDeckLinkVideoOutputCallback_v14_2_1*)this; 
+            AddRef(); 
+            return S_OK; 
+        }
+        return E_NOINTERFACE; 
+    }
     virtual ULONG   STDMETHODCALLTYPE AddRef(void)                            { return 1; }
     virtual ULONG   STDMETHODCALLTYPE Release(void)                           { return 1; }
 };
@@ -487,7 +509,7 @@ static int decklink_write_video_packet(AVFormatContext *avctx, AVPacket *pkt)
     pthread_mutex_unlock(&ctx->mutex);
 
     /* Schedule frame for playback. */
-    hr = ctx->dlo->ScheduleVideoFrame((class IDeckLinkVideoFrame *) frame,
+    hr = ctx->dlo->ScheduleVideoFrame((class IDeckLinkVideoFrame_v14_2_1 *) frame,
                                       pkt->pts * ctx->bmd_tb_num,
                                       ctx->bmd_tb_num, ctx->bmd_tb_den);
     /* Pass ownership to DeckLink, or release on failure */
@@ -579,7 +601,7 @@ av_cold int ff_decklink_write_header(AVFormatContext *avctx)
         return ret;
 
     /* Get output device. */
-    if (ctx->dl->QueryInterface(IID_IDeckLinkOutput, (void **) &ctx->dlo) != S_OK) {
+    if (ctx->dl->QueryInterface(IID_IDeckLinkOutput_v14_2_1, (void **) &ctx->dlo) != S_OK) {
         av_log(avctx, AV_LOG_ERROR, "Could not open output device from '%s'\n",
                avctx->url);
         ret = AVERROR(EIO);
