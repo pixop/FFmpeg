@@ -932,13 +932,20 @@ static int decklink_write_video_packet(AVFormatContext *avctx, AVPacket *pkt)
 
     /* Set frame metadata properties */
     size_t size;
+
     const AVMasteringDisplayMetadata *hdr = (const AVMasteringDisplayMetadata *) av_packet_get_side_data(pkt, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, &size);
-    if (hdr && size > 0)
+    if (hdr && size > 0) {
         frame->hdr = hdr;
+    } else {
+        frame->hdr = nullptr;
+    }
 
     const AVContentLightMetadata *lighting = (const AVContentLightMetadata *) av_packet_get_side_data(pkt, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, &size);
-    if (hdr && size > 0)
+    if (hdr && size > 0) {
         frame->lighting = lighting;
+    } else {
+        frame->lighting = nullptr;
+    }
 
     frame->SetMetadata(st->codecpar->color_space, st->codecpar->color_trc);
 
