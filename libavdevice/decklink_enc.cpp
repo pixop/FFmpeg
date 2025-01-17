@@ -36,6 +36,7 @@ extern "C" {
 #include "libavutil/frame.h"
 #include "libavutil/internal.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/mastering_display_metadata.h"
 #include "avdevice.h"
 }
 
@@ -52,7 +53,7 @@ static inline bool is_equal_guid(const REFIID &a, const REFIID &b) {
 }
 
 /* DeckLink callback class declaration */
-class decklink_frame : public IDeckLinkVideoFrame_v14_2_1
+class decklink_frame : public IDeckLinkVideoFrame_v14_2_1, public IDeckLinkVideoFrameMetadataExtensions
 {
 public:
     decklink_frame(struct decklink_ctx *ctx, AVFrame *avframe, AVCodecID codec_id, int height, int width) :
@@ -77,10 +78,14 @@ public:
     }
     virtual BMDFrameFlags  STDMETHODCALLTYPE GetFlags      (void)
     {
-       if (_codec_id == AV_CODEC_ID_WRAPPED_AVFRAME)
-           return _avframe->linesize[0] < 0 ? bmdFrameFlagFlipVertical : bmdFrameFlagDefault;
-       else
-           return bmdFrameFlagDefault;
+        if (_codec_id == AV_CODEC_ID_WRAPPED_AVFRAME) {
+            return _avframe->linesize[0] < 0 ? bmdFrameFlagFlipVertical : bmdFrameFlagDefault;
+        } else {
+            if (_ctx->supports_hdr && (hdr || lighting))
+                return bmdFrameFlagDefault | bmdFrameContainsHDRMetadata;
+            else
+                return bmdFrameFlagDefault;
+        }
     }
 
     virtual HRESULT        STDMETHODCALLTYPE GetBytes      (void **buffer)
@@ -115,6 +120,7 @@ public:
         _ancillary->AddRef();
         return S_OK;
     }
+/*
     virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv) 
     {
         if (is_equal_guid(iid, IID_IDeckLinkVideoFrame_v14_2_1)) 
@@ -125,6 +131,177 @@ public:
         }
         return E_NOINTERFACE; 
     }
+*/
+
+    virtual HRESULT STDMETHODCALLTYPE SetMetadata(enum AVColorSpace colorspace, enum AVColorTransferCharacteristic eotf)
+    {
+        _colorspace = colorspace;
+        _eotf = eotf;
+        return S_OK;
+    }
+
+    // IDeckLinkVideoFrameMetadataExtensions interface
+    virtual HRESULT GetInt(BMDDeckLinkFrameMetadataID metadataID, int64_t* value)
+    {
+        HRESULT result = S_OK;
+
+        switch (metadataID) {
+        case bmdDeckLinkFrameMetadataHDRElectroOpticalTransferFunc:
+            /* See CTA-861-G Sec 6.9 Dynamic Range and Mastering */
+
+            switch(_eotf) {
+            case AVCOL_TRC_SMPTEST2084:
+                /* PQ */
+                *value = 2;
+               break;
+            case AVCOL_TRC_ARIB_STD_B67:
+                /* Also known as "HLG" */
+                *value = 3;
+                break;
+            case AVCOL_TRC_SMPTE170M:
+            case AVCOL_TRC_SMPTE240M:
+            case AVCOL_TRC_BT709:
+            default:
+                /* SDR */
+                *value = 0;
+               break;
+            }
+            break;
+
+        case bmdDeckLinkFrameMetadataColorspace:
+            if (!_ctx->supports_colorspace) {
+                result = E_NOTIMPL;
+                break;
+            }
+            switch(_colorspace) {
+            case AVCOL_SPC_BT470BG:
+            case AVCOL_SPC_SMPTE170M:
+            case AVCOL_SPC_SMPTE240M:
+                *value = bmdColorspaceRec601;
+                break;
+            case AVCOL_SPC_BT2020_CL:
+            case AVCOL_SPC_BT2020_NCL:
+                *value = bmdColorspaceRec2020;
+                break;
+            case AVCOL_SPC_BT709:
+            default:
+                *value = bmdColorspaceRec709;
+                break;
+            }
+            break;
+        default:
+            result = E_INVALIDARG;
+        }
+
+        return result;
+    }
+    virtual HRESULT GetFloat(BMDDeckLinkFrameMetadataID metadataID, double* value)
+    {
+        *value = 0;
+
+        switch (metadataID) {
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedX:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[0][0]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesRedY:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[0][1]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenX:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[1][0]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesGreenY:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[1][1]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueX:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[2][0]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRDisplayPrimariesBlueY:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->display_primaries[2][1]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRWhitePointX:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->white_point[0]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRWhitePointY:
+            if (hdr && hdr->has_primaries)
+                *value = av_q2d(hdr->white_point[1]);
+            break;
+        case bmdDeckLinkFrameMetadataHDRMaxDisplayMasteringLuminance:
+            if (hdr && hdr->has_luminance)
+                *value = av_q2d(hdr->max_luminance);
+            break;
+        case bmdDeckLinkFrameMetadataHDRMinDisplayMasteringLuminance:
+            if (hdr && hdr->has_luminance)
+                *value = av_q2d(hdr->min_luminance);
+            break;
+        case bmdDeckLinkFrameMetadataHDRMaximumContentLightLevel:
+            if (lighting)
+                *value = (float) lighting->MaxCLL;
+            else
+                *value = 0;
+            break;
+        case bmdDeckLinkFrameMetadataHDRMaximumFrameAverageLightLevel:
+            if (lighting)
+                *value = (float) lighting->MaxFALL;
+            else
+                *value = 0;
+            break;
+        default:
+            return E_INVALIDARG;
+        }
+
+        return S_OK;
+    }
+
+    virtual HRESULT GetFlag(BMDDeckLinkFrameMetadataID metadataID, bool* value)
+    {
+        *value = false;
+        return E_INVALIDARG;
+    }
+    virtual HRESULT GetString(BMDDeckLinkFrameMetadataID metadataID, const char** value)
+    {
+        *value = nullptr;
+        return E_INVALIDARG;
+    }
+    virtual HRESULT GetBytes(BMDDeckLinkFrameMetadataID metadataID, void* buffer, uint32_t* bufferSize)
+    {
+        *bufferSize = 0;
+        return E_INVALIDARG;
+    }
+
+    virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, LPVOID *ppv)
+    {
+        CFUUIDBytes             iunknown;
+        HRESULT                 result          = S_OK;
+
+        if (!ppv)
+            return E_INVALIDARG;
+
+        *ppv = NULL;
+
+        iunknown = CFUUIDGetUUIDBytes(IUnknownUUID);
+        if (memcmp(&iid, &iunknown, sizeof(REFIID)) == 0) {
+            *ppv = this;
+            AddRef();
+        } else if (memcmp(&iid, &IID_IDeckLinkVideoFrame_v14_2_1, sizeof(REFIID)) == 0) {
+            *ppv = static_cast<IDeckLinkVideoFrame_v14_2_1*>(this);
+            AddRef();
+        } else if (memcmp(&iid, &IID_IDeckLinkVideoFrameMetadataExtensions, sizeof(REFIID)) == 0) {
+            *ppv = static_cast<IDeckLinkVideoFrameMetadataExtensions*>(this);
+            AddRef();
+        } else {
+            result = E_NOINTERFACE;
+        }
+
+        return result;
+    }
+
     virtual ULONG   STDMETHODCALLTYPE AddRef(void)                            { return ++_refs; }
     virtual ULONG   STDMETHODCALLTYPE Release(void)
     {
@@ -146,6 +323,10 @@ public:
     IDeckLinkVideoFrameAncillary *_ancillary;
     int _height;
     int _width;
+    enum AVColorSpace _colorspace;
+    enum AVColorTransferCharacteristic _eotf;
+    const AVMasteringDisplayMetadata *hdr;
+    const AVContentLightMetadata *lighting;
 
 private:
     std::atomic<int>  _refs;
@@ -748,6 +929,18 @@ static int decklink_write_video_packet(AVFormatContext *avctx, AVPacket *pkt)
         av_packet_free(&avpacket);
         return AVERROR(EIO);
     }
+
+    /* Set frame metadata properties */
+    size_t size;
+    const AVMasteringDisplayMetadata *hdr = (const AVMasteringDisplayMetadata *) av_packet_get_side_data(pkt, AV_PKT_DATA_MASTERING_DISPLAY_METADATA, &size);
+    if (hdr && size > 0)
+        frame->hdr = hdr;
+
+    const AVContentLightMetadata *lighting = (const AVContentLightMetadata *) av_packet_get_side_data(pkt, AV_PKT_DATA_CONTENT_LIGHT_LEVEL, &size);
+    if (hdr && size > 0)
+        frame->lighting = lighting;
+
+    frame->SetMetadata(st->codecpar->color_space, st->codecpar->color_trc);
 
     /* Always keep at most one second of frames buffered. */
     pthread_mutex_lock(&ctx->mutex);
